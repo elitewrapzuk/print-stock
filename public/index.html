@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0d0d1a">
+  <title>Print Stock</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+
+  <!-- ═══ LOGIN SCREEN ═══ -->
+  <div id="login-screen" class="login-screen screen active">
+    <div class="login-card">
+      <div class="login-icon">👕</div>
+      <h1>PRINT STOCK</h1>
+      <p class="subtitle">Staff Stock Checker</p>
+      <input type="password" id="staff-password" placeholder="Enter Password" autocomplete="off">
+      <button class="login-btn" id="staff-login-btn">LOGIN</button>
+      <p class="login-error" id="login-error">Incorrect password. Try again.</p>
+      <a href="/admin" class="admin-link">Admin Panel →</a>
+    </div>
+  </div>
+
+  <!-- ═══ APP SHELL ═══ -->
+  <div id="app-shell" style="display:none;">
+    <div class="header">
+      <div class="header-inner">
+        <div class="header-left">
+          <button class="back-btn hidden" id="back-btn" aria-label="Go back">←</button>
+          <div>
+            <div class="header-title" id="header-title">Print Stock</div>
+            <div class="breadcrumb" id="breadcrumb"></div>
+          </div>
+        </div>
+        <button class="logout-btn" id="logout-btn">Logout</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- FONT SELECT -->
+      <div id="font-screen" class="screen active">
+        <div class="card-grid">
+          <div class="select-card" data-font="prem">
+            <div class="card-icon">⚽</div>
+            <div class="card-info">
+              <h3>Prem Font</h3>
+              <p>Premier League — Adult &amp; Baby Letters, Adult, Youth &amp; Short Numbers</p>
+            </div>
+          </div>
+          <div class="select-card" data-font="club">
+            <div class="card-icon">🦁</div>
+            <div class="card-info">
+              <h3>Club Font</h3>
+              <p>Club Specific — Adult &amp; Baby Letters, Adult, Youth &amp; Short Numbers</p>
+            </div>
+          </div>
+          <div class="select-card" data-font="wsl">
+            <div class="card-icon">🏆</div>
+            <div class="card-info">
+              <h3>WSL Font</h3>
+              <p>Women's Super League — Adult Letters &amp; Numbers Only</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KIT SELECT -->
+      <div id="kit-screen" class="screen">
+        <div class="kit-grid">
+          <div class="kit-card" data-kit="home">
+            <div class="kit-icon">🏠</div>
+            <h3>Home</h3>
+          </div>
+          <div class="kit-card" data-kit="away">
+            <div class="kit-icon">✈️</div>
+            <h3>Away</h3>
+          </div>
+          <div class="kit-card" data-kit="third">
+            <div class="kit-icon">🌟</div>
+            <h3>Third</h3>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOCK VIEW -->
+      <div id="stock-screen" class="screen">
+        <div class="legend">
+          <div class="legend-item"><span class="legend-dot green"></span> In Stock</div>
+          <div class="legend-item"><span class="legend-dot yellow"></span> Low Stock</div>
+          <div class="legend-item"><span class="legend-dot red"></span> No Stock</div>
+        </div>
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="letters">Letters</button>
+          <button class="tab-btn" data-tab="numbers">Numbers</button>
+        </div>
+        <div id="stock-content" class="stock-section"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const FONT_LABELS = { prem: 'Prem Font', club: 'Club Font', wsl: 'WSL Font' };
+    const KIT_LABELS = { home: 'Home', away: 'Away', third: 'Third' };
+    const SIZE_LABELS = { adult: 'Adult', baby: 'Baby', youth: 'Youth', short: 'Short' };
+
+    let stockData = null;
+    let currentFont = null;
+    let currentKit = null;
+    let currentTab = 'letters';
+
+    // ─── Elements ───
+    const loginScreen = document.getElementById('login-screen');
+    const appShell = document.getElementById('app-shell');
+    const fontScreen = document.getElementById('font-screen');
+    const kitScreen = document.getElementById('kit-screen');
+    const stockScreen = document.getElementById('stock-screen');
+    const backBtn = document.getElementById('back-btn');
+    const headerTitle = document.getElementById('header-title');
+    const breadcrumb = document.getElementById('breadcrumb');
+    const stockContent = document.getElementById('stock-content');
+
+    // ─── Auth ───
+    async function checkAuth() {
+      const res = await fetch('/api/auth');
+      const data = await res.json();
+      if (data.authenticated) {
+        showApp();
+      }
+    }
+
+    document.getElementById('staff-login-btn').addEventListener('click', login);
+    document.getElementById('staff-password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') login();
+    });
+
+    async function login() {
+      const pw = document.getElementById('staff-password').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw, role: 'staff' })
+      });
+      if (res.ok) {
+        document.getElementById('login-error').classList.remove('show');
+        showApp();
+      } else {
+        document.getElementById('login-error').classList.add('show');
+      }
+    }
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      appShell.style.display = 'none';
+      loginScreen.classList.add('active');
+      loginScreen.style.display = '';
+      document.getElementById('staff-password').value = '';
+    });
+
+    async function showApp() {
+      loginScreen.classList.remove('active');
+      loginScreen.style.display = 'none';
+      appShell.style.display = 'block';
+      await loadStock();
+      navigateTo('fonts');
+    }
+
+    async function loadStock() {
+      const res = await fetch('/api/stock');
+      stockData = await res.json();
+    }
+
+    // ─── Navigation ───
+    function navigateTo(screen) {
+      [fontScreen, kitScreen, stockScreen].forEach(s => s.classList.remove('active'));
+      if (screen === 'fonts') {
+        fontScreen.classList.add('active');
+        headerTitle.textContent = 'Print Stock';
+        breadcrumb.textContent = '';
+        backBtn.classList.add('hidden');
+        currentFont = null;
+        currentKit = null;
+      } else if (screen === 'kits') {
+        kitScreen.classList.add('active');
+        headerTitle.textContent = FONT_LABELS[currentFont];
+        breadcrumb.textContent = 'Select Kit Type';
+        backBtn.classList.remove('hidden');
+      } else if (screen === 'stock') {
+        stockScreen.classList.add('active');
+        headerTitle.textContent = `${FONT_LABELS[currentFont]}`;
+        breadcrumb.textContent = `${KIT_LABELS[currentKit]} Kit`;
+        backBtn.classList.remove('hidden');
+        renderStock();
+      }
+    }
+
+    backBtn.addEventListener('click', () => {
+      if (stockScreen.classList.contains('active')) {
+        navigateTo('kits');
+      } else if (kitScreen.classList.contains('active')) {
+        navigateTo('fonts');
+      }
+    });
+
+    // ─── Font Selection ───
+    document.querySelectorAll('.select-card').forEach(card => {
+      card.addEventListener('click', () => {
+        currentFont = card.dataset.font;
+        navigateTo('kits');
+      });
+    });
+
+    // ─── Kit Selection ───
+    document.querySelectorAll('.kit-card').forEach(card => {
+      card.addEventListener('click', () => {
+        currentKit = card.dataset.kit;
+        currentTab = 'letters';
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-tab="letters"]').classList.add('active');
+        navigateTo('stock');
+      });
+    });
+
+    // ─── Tabs ───
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentTab = btn.dataset.tab;
+        renderStock();
+      });
+    });
+
+    // ─── Render Stock ───
+    function renderStock() {
+      if (!stockData || !currentFont || !currentKit) return;
+      const data = stockData[currentFont][currentKit][currentTab];
+      let html = '';
+
+      const sizes = Object.keys(data);
+      for (const size of sizes) {
+        const items = data[size];
+        html += `<div class="size-group">`;
+        html += `<div class="size-label">${SIZE_LABELS[size] || size} ${currentTab === 'letters' ? 'Letters' : 'Numbers'}</div>`;
+        html += `<div class="stock-grid">`;
+        for (const [item, status] of Object.entries(items)) {
+          html += `<div class="stock-tile ${status}" title="${item} — ${status === 'green' ? 'In Stock' : status === 'yellow' ? 'Low Stock' : 'No Stock'}">${item}</div>`;
+        }
+        html += `</div></div>`;
+      }
+
+      stockContent.innerHTML = html;
+    }
+
+    // ─── Toast ───
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // ─── Init ───
+    checkAuth();
+  </script>
+</body>
+</html>

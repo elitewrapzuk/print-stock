@@ -1,0 +1,391 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0d0d1a">
+  <title>Print Stock — Admin</title>
+  <link rel="stylesheet" href="/style.css">
+  <style>
+    .admin-header-badge { margin-left: 10px; }
+    .save-indicator {
+      position: fixed;
+      top: 70px;
+      right: 16px;
+      background: rgba(0, 230, 118, 0.15);
+      color: var(--green);
+      padding: 6px 14px;
+      border-radius: 20px;
+      font-size: 0.75rem;
+      font-weight: 700;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      z-index: 200;
+    }
+    .save-indicator.show { opacity: 1; }
+    .stock-tile.clickable { cursor: pointer; }
+    .set-all-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 8px;
+      padding: 8px 0;
+    }
+    .set-all-label {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .set-all-btn {
+      width: 22px;
+      height: 22px;
+      border-radius: 50%;
+      border: 2px solid;
+      cursor: pointer;
+      transition: var(--transition);
+    }
+    .set-all-btn:hover { transform: scale(1.2); }
+    .set-all-btn.green { border-color: var(--green); background: var(--green-bg); }
+    .set-all-btn.yellow { border-color: var(--yellow); background: var(--yellow-bg); }
+    .set-all-btn.red { border-color: var(--red); background: var(--red-bg); }
+  </style>
+</head>
+<body>
+
+  <!-- ═══ ADMIN LOGIN ═══ -->
+  <div id="login-screen" class="login-screen screen active">
+    <div class="login-card">
+      <div class="login-icon">🔐</div>
+      <h1>ADMIN PANEL</h1>
+      <p class="subtitle">Print Stock Management</p>
+      <input type="password" id="admin-password" placeholder="Admin Password" autocomplete="off">
+      <button class="login-btn" id="admin-login-btn">LOGIN</button>
+      <p class="login-error" id="login-error">Incorrect admin password.</p>
+      <a href="/" class="admin-link">← Back to Staff View</a>
+    </div>
+  </div>
+
+  <!-- ═══ ADMIN APP ═══ -->
+  <div id="app-shell" style="display:none;">
+    <div class="header">
+      <div class="header-inner">
+        <div class="header-left">
+          <button class="back-btn hidden" id="back-btn" aria-label="Go back">←</button>
+          <div>
+            <div class="header-title" id="header-title">
+              Admin Panel <span class="admin-badge admin-header-badge">ADMIN</span>
+            </div>
+            <div class="breadcrumb" id="breadcrumb">Tap items to change stock status</div>
+          </div>
+        </div>
+        <button class="logout-btn" id="logout-btn">Logout</button>
+      </div>
+    </div>
+
+    <div class="container">
+      <!-- FONT SELECT -->
+      <div id="font-screen" class="screen active">
+        <div class="card-grid">
+          <div class="select-card" data-font="prem">
+            <div class="card-icon">⚽</div>
+            <div class="card-info">
+              <h3>Prem Font</h3>
+              <p>Premier League — All sizes</p>
+            </div>
+          </div>
+          <div class="select-card" data-font="club">
+            <div class="card-icon">🦁</div>
+            <div class="card-info">
+              <h3>Club Font</h3>
+              <p>Club Specific — All sizes</p>
+            </div>
+          </div>
+          <div class="select-card" data-font="wsl">
+            <div class="card-icon">🏆</div>
+            <div class="card-info">
+              <h3>WSL Font</h3>
+              <p>Women's Super League — Adult only</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- KIT SELECT -->
+      <div id="kit-screen" class="screen">
+        <div class="kit-grid">
+          <div class="kit-card" data-kit="home">
+            <div class="kit-icon">🏠</div>
+            <h3>Home</h3>
+          </div>
+          <div class="kit-card" data-kit="away">
+            <div class="kit-icon">✈️</div>
+            <h3>Away</h3>
+          </div>
+          <div class="kit-card" data-kit="third">
+            <div class="kit-icon">🌟</div>
+            <h3>Third</h3>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOCK EDIT VIEW -->
+      <div id="stock-screen" class="screen">
+        <div class="legend">
+          <div class="legend-item"><span class="legend-dot green"></span> In Stock</div>
+          <div class="legend-item"><span class="legend-dot yellow"></span> Low Stock</div>
+          <div class="legend-item"><span class="legend-dot red"></span> No Stock</div>
+        </div>
+        <div class="tab-bar">
+          <button class="tab-btn active" data-tab="letters">Letters</button>
+          <button class="tab-btn" data-tab="numbers">Numbers</button>
+        </div>
+        <div id="stock-content" class="stock-section"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="save-indicator" id="save-indicator">✓ Saved</div>
+  <div class="toast" id="toast"></div>
+
+  <script>
+    const FONT_LABELS = { prem: 'Prem Font', club: 'Club Font', wsl: 'WSL Font' };
+    const KIT_LABELS = { home: 'Home', away: 'Away', third: 'Third' };
+    const SIZE_LABELS = { adult: 'Adult', baby: 'Baby', youth: 'Youth', short: 'Short' };
+    const STATUS_CYCLE = { green: 'yellow', yellow: 'red', red: 'green' };
+
+    let stockData = null;
+    let currentFont = null;
+    let currentKit = null;
+    let currentTab = 'letters';
+
+    const loginScreen = document.getElementById('login-screen');
+    const appShell = document.getElementById('app-shell');
+    const fontScreen = document.getElementById('font-screen');
+    const kitScreen = document.getElementById('kit-screen');
+    const stockScreen = document.getElementById('stock-screen');
+    const backBtn = document.getElementById('back-btn');
+    const headerTitle = document.getElementById('header-title');
+    const breadcrumb = document.getElementById('breadcrumb');
+    const stockContent = document.getElementById('stock-content');
+    const saveIndicator = document.getElementById('save-indicator');
+
+    // ─── Auth ───
+    async function checkAuth() {
+      const res = await fetch('/api/auth');
+      const data = await res.json();
+      if (data.authenticated && data.role === 'admin') {
+        showApp();
+      }
+    }
+
+    document.getElementById('admin-login-btn').addEventListener('click', login);
+    document.getElementById('admin-password').addEventListener('keydown', e => {
+      if (e.key === 'Enter') login();
+    });
+
+    async function login() {
+      const pw = document.getElementById('admin-password').value;
+      const res = await fetch('/api/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw, role: 'admin' })
+      });
+      if (res.ok) {
+        document.getElementById('login-error').classList.remove('show');
+        showApp();
+      } else {
+        document.getElementById('login-error').classList.add('show');
+      }
+    }
+
+    document.getElementById('logout-btn').addEventListener('click', async () => {
+      await fetch('/api/logout', { method: 'POST' });
+      appShell.style.display = 'none';
+      loginScreen.classList.add('active');
+      loginScreen.style.display = '';
+      document.getElementById('admin-password').value = '';
+    });
+
+    async function showApp() {
+      loginScreen.classList.remove('active');
+      loginScreen.style.display = 'none';
+      appShell.style.display = 'block';
+      await loadStock();
+      navigateTo('fonts');
+    }
+
+    async function loadStock() {
+      const res = await fetch('/api/stock');
+      stockData = await res.json();
+    }
+
+    // ─── Navigation ───
+    function navigateTo(screen) {
+      [fontScreen, kitScreen, stockScreen].forEach(s => s.classList.remove('active'));
+      if (screen === 'fonts') {
+        fontScreen.classList.add('active');
+        headerTitle.innerHTML = 'Admin Panel <span class="admin-badge admin-header-badge">ADMIN</span>';
+        breadcrumb.textContent = 'Tap items to change stock status';
+        backBtn.classList.add('hidden');
+        currentFont = null;
+        currentKit = null;
+      } else if (screen === 'kits') {
+        kitScreen.classList.add('active');
+        headerTitle.innerHTML = `${FONT_LABELS[currentFont]} <span class="admin-badge admin-header-badge">ADMIN</span>`;
+        breadcrumb.textContent = 'Select Kit Type';
+        backBtn.classList.remove('hidden');
+      } else if (screen === 'stock') {
+        stockScreen.classList.add('active');
+        headerTitle.innerHTML = `${FONT_LABELS[currentFont]} <span class="admin-badge admin-header-badge">ADMIN</span>`;
+        breadcrumb.textContent = `${KIT_LABELS[currentKit]} Kit — Tap to change status`;
+        backBtn.classList.remove('hidden');
+        renderStock();
+      }
+    }
+
+    backBtn.addEventListener('click', () => {
+      if (stockScreen.classList.contains('active')) {
+        navigateTo('kits');
+      } else if (kitScreen.classList.contains('active')) {
+        navigateTo('fonts');
+      }
+    });
+
+    // ─── Font/Kit Selection ───
+    document.querySelectorAll('.select-card').forEach(card => {
+      card.addEventListener('click', () => {
+        currentFont = card.dataset.font;
+        navigateTo('kits');
+      });
+    });
+
+    document.querySelectorAll('.kit-card').forEach(card => {
+      card.addEventListener('click', () => {
+        currentKit = card.dataset.kit;
+        currentTab = 'letters';
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelector('[data-tab="letters"]').classList.add('active');
+        navigateTo('stock');
+      });
+    });
+
+    // ─── Tabs ───
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        currentTab = btn.dataset.tab;
+        renderStock();
+      });
+    });
+
+    // ─── Render Stock (Admin — clickable) ───
+    function renderStock() {
+      if (!stockData || !currentFont || !currentKit) return;
+      const data = stockData[currentFont][currentKit][currentTab];
+      let html = '';
+
+      const sizes = Object.keys(data);
+      for (const size of sizes) {
+        const items = data[size];
+        html += `<div class="size-group">`;
+        html += `<div class="size-label">${SIZE_LABELS[size] || size} ${currentTab === 'letters' ? 'Letters' : 'Numbers'}</div>`;
+
+        // Set all buttons
+        html += `<div class="set-all-bar">`;
+        html += `<span class="set-all-label">Set all:</span>`;
+        html += `<button class="set-all-btn green" onclick="setAll('${size}', 'green')" title="Set all to In Stock"></button>`;
+        html += `<button class="set-all-btn yellow" onclick="setAll('${size}', 'yellow')" title="Set all to Low Stock"></button>`;
+        html += `<button class="set-all-btn red" onclick="setAll('${size}', 'red')" title="Set all to No Stock"></button>`;
+        html += `</div>`;
+
+        html += `<div class="stock-grid">`;
+        for (const [item, status] of Object.entries(items)) {
+          html += `<div class="stock-tile clickable ${status}" data-size="${size}" data-item="${item}" onclick="cycleStatus(this, '${size}', '${item}')">${item}</div>`;
+        }
+        html += `</div></div>`;
+      }
+
+      stockContent.innerHTML = html;
+    }
+
+    // ─── Cycle Status ───
+    async function cycleStatus(el, size, item) {
+      const current = stockData[currentFont][currentKit][currentTab][size][item];
+      const next = STATUS_CYCLE[current];
+
+      // Optimistic update
+      el.className = `stock-tile clickable ${next}`;
+      stockData[currentFont][currentKit][currentTab][size][item] = next;
+
+      const res = await fetch('/api/stock', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          font: currentFont,
+          kit: currentKit,
+          category: currentTab,
+          size: size,
+          item: item,
+          status: next
+        })
+      });
+
+      if (res.ok) {
+        flashSave();
+      } else {
+        // Revert
+        el.className = `stock-tile clickable ${current}`;
+        stockData[currentFont][currentKit][currentTab][size][item] = current;
+        showToast('Failed to save. Please try again.');
+      }
+    }
+
+    // ─── Set All ───
+    async function setAll(size, status) {
+      const res = await fetch('/api/stock/bulk', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          font: currentFont,
+          kit: currentKit,
+          category: currentTab,
+          size: size,
+          status: status
+        })
+      });
+
+      if (res.ok) {
+        // Update local data
+        const items = stockData[currentFont][currentKit][currentTab][size];
+        for (const key of Object.keys(items)) {
+          items[key] = status;
+        }
+        renderStock();
+        flashSave();
+      } else {
+        showToast('Failed to save. Please try again.');
+      }
+    }
+
+    // ─── UI Feedback ───
+    function flashSave() {
+      saveIndicator.classList.add('show');
+      setTimeout(() => saveIndicator.classList.remove('show'), 1200);
+    }
+
+    function showToast(msg) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.classList.add('show');
+      setTimeout(() => t.classList.remove('show'), 2500);
+    }
+
+    // ─── Init ───
+    checkAuth();
+  </script>
+</body>
+</html>
