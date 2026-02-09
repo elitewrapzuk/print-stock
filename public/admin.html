@@ -160,6 +160,13 @@
     let currentFont = null;
     let currentKit = null;
     let currentTab = 'letters';
+    let authToken = localStorage.getItem('ps_admin_token') || null;
+
+    function authHeaders() {
+      const h = { 'Content-Type': 'application/json' };
+      if (authToken) h['X-Auth-Token'] = authToken;
+      return h;
+    }
 
     const loginScreen = document.getElementById('login-screen');
     const appShell = document.getElementById('app-shell');
@@ -174,11 +181,13 @@
 
     // ─── Auth ───
     async function checkAuth() {
-      const res = await fetch('/api/auth');
-      const data = await res.json();
-      if (data.authenticated && data.role === 'admin') {
-        showApp();
-      }
+      try {
+        const res = await fetch('/api/auth', { headers: authHeaders() });
+        const data = await res.json();
+        if (data.authenticated && data.role === 'admin') {
+          showApp();
+        }
+      } catch (e) { console.error(e); }
     }
 
     document.getElementById('admin-login-btn').addEventListener('click', login);
@@ -194,6 +203,9 @@
         body: JSON.stringify({ password: pw, role: 'admin' })
       });
       if (res.ok) {
+        const data = await res.json();
+        authToken = data.token;
+        localStorage.setItem('ps_admin_token', authToken);
         document.getElementById('login-error').classList.remove('show');
         showApp();
       } else {
@@ -202,7 +214,9 @@
     }
 
     document.getElementById('logout-btn').addEventListener('click', async () => {
-      await fetch('/api/logout', { method: 'POST' });
+      await fetch('/api/logout', { method: 'POST', headers: authHeaders() });
+      authToken = null;
+      localStorage.removeItem('ps_admin_token');
       appShell.style.display = 'none';
       loginScreen.classList.add('active');
       loginScreen.style.display = '';
@@ -218,8 +232,19 @@
     }
 
     async function loadStock() {
-      const res = await fetch('/api/stock');
-      stockData = await res.json();
+      try {
+        const res = await fetch('/api/stock', { headers: authHeaders() });
+        if (!res.ok) {
+          console.error('Stock fetch failed:', res.status);
+          showToast('Failed to load stock data. Please log in again.');
+          return;
+        }
+        stockData = await res.json();
+        console.log('Stock loaded:', Object.keys(stockData));
+      } catch (e) {
+        console.error('Stock fetch error:', e);
+        showToast('Network error loading stock.');
+      }
     }
 
     // ─── Navigation ───
@@ -323,7 +348,7 @@
 
       const res = await fetch('/api/stock', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           font: currentFont,
           kit: currentKit,
@@ -348,7 +373,7 @@
     async function setAll(size, status) {
       const res = await fetch('/api/stock/bulk', {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: authHeaders(),
         body: JSON.stringify({
           font: currentFont,
           kit: currentKit,

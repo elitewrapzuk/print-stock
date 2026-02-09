@@ -92,18 +92,29 @@ function writeStock(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+// Simple token map (in-memory, resets on restart — fine for this use case)
+const crypto = require('crypto');
+const tokens = {}; // token -> role
+
+function getRole(req) {
+  // Check token header first (works without cookies)
+  const token = req.headers['x-auth-token'];
+  if (token && tokens[token]) return tokens[token];
+  // Fallback to session
+  if (req.session && req.session.role) return req.session.role;
+  return null;
+}
+
 // Auth middleware
 function requireStaff(req, res, next) {
-  if (req.session && (req.session.role === 'staff' || req.session.role === 'admin')) {
-    return next();
-  }
+  const role = getRole(req);
+  if (role === 'staff' || role === 'admin') return next();
   res.status(401).json({ error: 'Unauthorized' });
 }
 
 function requireAdmin(req, res, next) {
-  if (req.session && req.session.role === 'admin') {
-    return next();
-  }
+  const role = getRole(req);
+  if (role === 'admin') return next();
   res.status(401).json({ error: 'Admin access required' });
 }
 
@@ -112,23 +123,28 @@ app.post('/api/login', (req, res) => {
   const { password, role } = req.body;
   if (role === 'staff' && password === STAFF_PASSWORD) {
     req.session.role = 'staff';
-    return res.json({ success: true, role: 'staff' });
+    const token = crypto.randomBytes(32).toString('hex');
+    tokens[token] = 'staff';
+    return res.json({ success: true, role: 'staff', token });
   }
   if (role === 'admin' && password === ADMIN_PASSWORD) {
     req.session.role = 'admin';
-    return res.json({ success: true, role: 'admin' });
+    const token = crypto.randomBytes(32).toString('hex');
+    tokens[token] = 'admin';
+    return res.json({ success: true, role: 'admin', token });
   }
   res.status(401).json({ error: 'Invalid password' });
 });
 
 app.get('/api/auth', (req, res) => {
-  if (req.session && req.session.role) {
-    return res.json({ authenticated: true, role: req.session.role });
-  }
+  const role = getRole(req);
+  if (role) return res.json({ authenticated: true, role });
   res.json({ authenticated: false });
 });
 
 app.post('/api/logout', (req, res) => {
+  const token = req.headers['x-auth-token'];
+  if (token) delete tokens[token];
   req.session.destroy();
   res.json({ success: true });
 });
